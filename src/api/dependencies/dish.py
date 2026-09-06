@@ -1,7 +1,7 @@
 import uuid
 
 from models.dish import Dish
-from services.dish import get_dish_or_raise
+from services.dish import DishService
 
 from core.db import DBSession
 
@@ -11,4 +11,4 @@ async def get_dish_or_404(
     session: DBSession,
 ) -> Dish:
     """FastAPI-зависимость для получения существующего блюда."""
-    return await get_dish_or_raise(dish_id, session)
+    return await DishService.get_dish_or_raise(dish_id, session)

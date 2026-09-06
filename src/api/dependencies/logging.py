@@ -20,7 +20,7 @@ def user_log_context(user: User) -> Generator[User, Any, None]:
         user_id=str(user.id),
         username=user.username,
     ):
-        yield user
+        yield user  # noqa: ASYNC119 (FastAPI требует генератор-зависимость)
 
 
 async def get_current_user_with_logging(
@@ -28,7 +28,7 @@ async def get_current_user_with_logging(
 ) -> AsyncGenerator[User, None]:
     """Обёртка над get_current_user."""
     with user_log_context(user):
-        yield user
+        yield user  # noqa: ASYNC119 (FastAPI требует генератор-зависимость)
 
 
 async def get_me_user_with_logging(
@@ -36,4 +36,4 @@ async def get_me_user_with_logging(
 ) -> AsyncGenerator[User, None]:
     """Обёртка над get_current_user_or_forbidden."""
     with user_log_context(user):
-        yield user
+        yield user  # noqa: ASYNC119 (FastAPI требует генератор-зависимость)

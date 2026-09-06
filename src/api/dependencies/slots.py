@@ -1,7 +1,7 @@
 import uuid
 
 from models.slots import Slot
-from services.slot import get_slot_in_cafe_or_raise
+from services.slot import SlotService
 
 from core.db import DBSession
 
@@ -12,4 +12,4 @@ async def get_slot_in_cafe(
     session: DBSession,
 ) -> Slot:
     """FastAPI-зависимость для получения слота указанного кафе."""
-    return await get_slot_in_cafe_or_raise(cafe_id, slot_id, session)
+    return await SlotService.get_slot_in_cafe_or_raise(cafe_id, slot_id, session)

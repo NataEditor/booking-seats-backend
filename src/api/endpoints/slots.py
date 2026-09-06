@@ -14,7 +14,7 @@ from models.cafe import Cafe
 from models.slots import Slot
 from schemas.slots import TimeSlotCreate, TimeSlotInfo, TimeSlotUpdate
 from services.cafe import ensure_manager_cafe_access
-from services.slot import create_slot_in_cafe
+from services.slot import SlotService
 
 from core.db import DBSession
 from core.redis import redis_dep
@@ -72,7 +72,7 @@ async def create_slot(
 
     Менеджер создает слоты только в своём кафе.
     """
-    return await create_slot_in_cafe(cafe_id, slot_create, current_user, session)
+    return await SlotService.create_slot_in_cafe(cafe_id, slot_create, current_user, session)
 
 
 @router.get(

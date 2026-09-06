@@ -22,7 +22,7 @@ from api.validators import ensure_contact_remains, reject_null_required_fields
 from crud.user import user_crud
 from models.user import User, UserRole
 from schemas.user import AuthData, AuthToken, UserCreate, UserInfo, UserUpdate
-from services.user import ensure_user_update_allowed
+from services.user import UserService
 
 from core.db import DBSession
 from core.redis import redis_dep
@@ -170,7 +170,7 @@ async def update_user_by_id(
     update_data = user_update.model_dump(exclude_unset=True)
     reject_null_required_fields(update_data)
     requested_role = update_data.get('role')
-    ensure_user_update_allowed(actor, target_user, requested_role)
+    UserService.ensure_user_update_allowed(actor, target_user, requested_role)
 
     if requested_role is not None and requested_role != UserRole.MANAGER:
         target_user.cafe_id = None

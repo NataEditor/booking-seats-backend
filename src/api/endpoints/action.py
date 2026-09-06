@@ -11,8 +11,7 @@ from api.responses.statuses import CREATED, RESOURCE_CREATE, RESOURCE_DETAIL, RE
 from crud.action import action_crud
 from models.action import Action
 from schemas.action import ActionCreate, ActionInfo, ActionUpdate
-from services.action import create_action as create_action_service
-from services.action import update_action as update_action_service
+from services.action import ActionService
 
 from core.db import DBSession
 from core.redis import redis_dep
@@ -65,7 +64,7 @@ async def create_action(
     redis: redis_dep,
 ) -> Action:
     """Создание акции администратором или менеджером."""
-    return await create_action_service(action_create, current_user, session, redis)
+    return await ActionService.create_action(action_create, current_user, session, redis)
 
 
 @router.get(
@@ -100,4 +99,4 @@ async def update_action(
     action: Action = Depends(get_action_or_404),
 ) -> Action:
     """Обновление акции администратором или менеджером."""
-    return await update_action_service(action, action_update, current_user, session, redis)
+    return await ActionService.update_action(action, action_update, current_user, session, redis)

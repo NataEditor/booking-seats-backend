@@ -22,7 +22,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     """Получение асинхронной сессии для FastAPI Depends."""
     async with session_maker() as session:
         try:
-            yield session
+            yield session  # noqa: ASYNC119 (FastAPI требует генератор-зависимость)
             await session.commit()
         except SQLAlchemyError as error:
             await session.rollback()

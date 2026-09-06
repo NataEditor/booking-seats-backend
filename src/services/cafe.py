@@ -14,7 +14,7 @@ from exceptions.common import EntityNotFoundError, PermissionDeniedError
 from models.cafe import Cafe
 from models.user import User, UserRole
 from schemas.cafe import CafeCreate, CafeUpdate
-from services.media import get_media_or_raise
+from services.media import MediaService
 
 from core.redis import redis_dep
 
@@ -203,7 +203,7 @@ async def create_cafe(
     """Проверяет связи и создаёт кафе через слой хранения."""
     logger.info('Создание нового кафе: name={}, address={}', cafe_create.name, cafe_create.address)
     if cafe_create.photo_id is not None:
-        await get_media_or_raise(cafe_create.photo_id, session, check_file=False)
+        await MediaService.get_media_or_raise(cafe_create.photo_id, session, check_file=False)
     if cafe_create.managers_id:
         await ensure_managers_exist_and_role(cafe_create.managers_id, session)
 
@@ -231,7 +231,7 @@ async def update_cafe(
     managers_id = update_data.pop('managers_id', None)
 
     if 'photo_id' in update_data and update_data['photo_id'] is not None:
-        await get_media_or_raise(update_data['photo_id'], session, check_file=False)
+        await MediaService.get_media_or_raise(update_data['photo_id'], session, check_file=False)
     if managers_id:
         await ensure_managers_exist_and_role(managers_id, session)
 

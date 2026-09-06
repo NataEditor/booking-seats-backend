@@ -182,7 +182,7 @@ class DishAPITests(IsolatedAsyncioTestCase):
             'cafes_id': [str(cafe_id)],
         }
 
-        with patch('api.endpoints.dish.create_dish_service', new=create):
+        with patch('api.endpoints.dish.DishService.create_dish', new=create):
             response = await self.client.post('/api/v1/dishes', json=payload)
 
         self.assertEqual(response.status_code, 201)
@@ -200,7 +200,7 @@ class DishAPITests(IsolatedAsyncioTestCase):
         self._set_user(_make_user(UserRole.USER))
         create = AsyncMock()
 
-        with patch('api.endpoints.dish.create_dish_service', new=create):
+        with patch('api.endpoints.dish.DishService.create_dish', new=create):
             response = await self.client.post(
                 '/api/v1/dishes',
                 json={
@@ -244,7 +244,7 @@ class DishAPITests(IsolatedAsyncioTestCase):
         self._set_dish(dish)
         update = AsyncMock(return_value=dish)
 
-        with patch('api.endpoints.dish.update_dish_service', new=update):
+        with patch('api.endpoints.dish.DishService.update_dish', new=update):
             response = await self.client.patch(
                 f'/api/v1/dishes/{dish.id}',
                 json={'name': 'Новый борщ'},
@@ -267,7 +267,7 @@ class DishAPITests(IsolatedAsyncioTestCase):
         self._set_dish(dish)
         update = AsyncMock()
 
-        with patch('api.endpoints.dish.update_dish_service', new=update):
+        with patch('api.endpoints.dish.DishService.update_dish', new=update):
             response = await self.client.patch(
                 f'/api/v1/dishes/{dish.id}',
                 json={'name': 'Новый борщ'},

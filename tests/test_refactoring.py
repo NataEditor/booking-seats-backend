@@ -11,9 +11,9 @@ from models.user import UserRole
 from schemas.action import ActionCreate
 from schemas.cafe import CafeCreate
 from schemas.dish import DishCreate, DishUpdate
-from services.action import create_action
+from services.action import ActionService
 from services.cafe import create_cafe
-from services.dish import create_dish, update_dish
+from services.dish import DishService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,7 +96,7 @@ class ServiceWorkflowTests(IsolatedAsyncioTestCase):
             patch('services.action.ensure_cafes_exist', new=ensure_cafes),
             patch('services.action.action_crud.create', new=create),
         ):
-            result = await create_action(payload, admin, session, redis)
+            result = await ActionService.create_action(payload, admin, session, redis)
 
         ensure_cafes.assert_awaited_once_with([cafe_id], session)
         create.assert_awaited_once_with(payload, session, redis)
@@ -121,10 +121,10 @@ class ServiceWorkflowTests(IsolatedAsyncioTestCase):
 
         with (
             patch('services.dish.ensure_cafes_exist', new=ensure_cafes),
-            patch('services.dish.get_media_or_raise', new=get_media),
+            patch('services.dish.MediaService.get_media_or_raise', new=get_media),
             patch('services.dish.dish_crud.create', new=create),
         ):
-            result = await create_dish(payload, admin, session, redis)
+            result = await DishService.create_dish(payload, admin, session, redis)
 
         ensure_cafes.assert_awaited_once_with([cafe_id], session)
         get_media.assert_awaited_once_with(photo_id, session, check_file=False)
@@ -148,7 +148,7 @@ class ServiceWorkflowTests(IsolatedAsyncioTestCase):
 
         with patch('services.dish.dish_crud.update', new=update):
             with self.assertRaises(PermissionDeniedError):
-                await update_dish(
+                await DishService.update_dish(
                     dish,
                     payload,
                     manager,

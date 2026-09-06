@@ -11,8 +11,7 @@ from api.responses.statuses import CREATED, RESOURCE_CREATE, RESOURCE_DETAIL, RE
 from crud.dish import dish_crud
 from models.dish import Dish
 from schemas.dish import DishCreate, DishInfo, DishUpdate
-from services.dish import create_dish as create_dish_service
-from services.dish import update_dish as update_dish_service
+from services.dish import DishService
 
 from core.db import DBSession
 from core.redis import redis_dep
@@ -64,7 +63,7 @@ async def create_dish(
 
     Только для администраторов и менеджеров.
     """
-    return await create_dish_service(dish_create, current_user, session, redis)
+    return await DishService.create_dish(dish_create, current_user, session, redis)
 
 
 @router.get(
@@ -107,4 +106,4 @@ async def update_dish(
 
     Только для администраторов и менеджеров.
     """
-    return await update_dish_service(dish, dish_update, current_user, session, redis)
+    return await DishService.update_dish(dish, dish_update, current_user, session, redis)

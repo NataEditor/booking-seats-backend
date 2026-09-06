@@ -233,7 +233,7 @@ class SlotAPITests(IsolatedAsyncioTestCase):
 
         with (
             patch(
-                'services.slot.check_slot_not_overlapping',
+                'services.slot.SlotService.check_slot_not_overlapping',
                 new=AsyncMock(),
             ),
             patch(
@@ -395,7 +395,7 @@ class SlotAPITests(IsolatedAsyncioTestCase):
 
         with (
             patch(
-                'services.slot.check_slot_not_overlapping',
+                'services.slot.SlotService.check_slot_not_overlapping',
                 new=AsyncMock(),
             ),
             patch('api.endpoints.slots.slot_crud.create_with_cafe', new=create_with_cafe),
@@ -538,7 +538,7 @@ class SlotAPITests(IsolatedAsyncioTestCase):
 
         with (
             patch(
-                'services.slot.check_slot_not_overlapping',
+                'services.slot.SlotService.check_slot_not_overlapping',
                 new=AsyncMock(side_effect=SlotOverlapError),
             ),
             patch('api.endpoints.slots.slot_crud.create_with_cafe', new=create_with_cafe),

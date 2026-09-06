@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from api.dependencies.logging import get_current_user_with_logging, get_me_user_with_logging
 from exceptions.base import APIError
 from models.user import User, UserRole
-from services.user import is_admin
+from services.user import UserService
 
 CurrentUser = Annotated[User, Depends(get_current_user_with_logging)]
 MeUser = Annotated[User, Depends(get_me_user_with_logging)]
@@ -23,7 +23,7 @@ async def get_staff_user(user: CurrentUser) -> User:
 
 async def get_admin_user(user: CurrentUser) -> User:
     """Разрешает доступ только администраторам."""
-    if is_admin(user):
+    if UserService.is_admin(user):
         return user
     raise APIError(
         status_code=status.HTTP_403_FORBIDDEN,

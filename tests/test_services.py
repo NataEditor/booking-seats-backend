@@ -11,7 +11,7 @@ from services.cafe import (
     get_cafe_or_raise,
     get_manager_cafes,
 )
-from services.slot import get_slot_in_cafe_or_raise
+from services.slot import SlotService
 
 
 class ServiceAccessTests(TestCase):
@@ -82,7 +82,7 @@ class ServiceLookupTests(IsolatedAsyncioTestCase):
 
         with patch('services.slot.slot_crud.get_by_cafe_and_id', new=slot_lookup):
             with self.assertRaises(EntityNotFoundError):
-                await get_slot_in_cafe_or_raise(
+                await SlotService.get_slot_in_cafe_or_raise(
                     cafe_id,
                     slot_id,
                     session,

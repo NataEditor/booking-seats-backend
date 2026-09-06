@@ -20,22 +20,43 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Удаляем дубликаты (cafe_id, start_time, end_time), оставляя самый старый.
-    # Слоты, привязанные к бронированиям, не трогаем — иначе FOREIGN KEY
-    # нарушит целостность. Без этой очистки уникальный индекс uq_slot_cafe_start_end
-    # не создаётся, если в таблице уже накопились повторяющиеся слоты.
+    # Удаляем дубликаты (cafe_id, start_time, end_time), оставляя ровно один слот:
+    # - если среди дубликатов есть слот из бронирования — оставляем его (FK-целостность);
+    # - иначе оставляем самый старый.
+    # Без этой очистки уникальный индекс uq_slot_cafe_start_end не создаётся,
+    # если в таблице уже накопились повторяющиеся слоты (например, на стенде).
     op.execute(
         """
         DELETE FROM slots a
-        USING slots b
-        WHERE a.created_at > b.created_at
-          AND a.cafe_id = b.cafe_id
-          AND a.start_time = b.start_time
-          AND a.end_time = b.end_time
-          AND NOT EXISTS (
-              SELECT 1 FROM bookingtableslots bt
-              WHERE bt.slot_id = a.id
-          )
+        WHERE EXISTS (
+            SELECT 1 FROM slots b
+            WHERE b.cafe_id = a.cafe_id
+              AND b.start_time = a.start_time
+              AND b.end_time = a.end_time
+              AND b.id <> a.id
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM bookingtableslots bt
+            WHERE bt.slot_id = a.id
+        )
+        AND (
+            EXISTS (
+                SELECT 1 FROM bookingtableslots bt2
+                WHERE bt2.slot_id IN (
+                    SELECT c.id FROM slots c
+                    WHERE c.cafe_id = a.cafe_id
+                      AND c.start_time = a.start_time
+                      AND c.end_time = a.end_time
+                      AND c.id <> a.id
+                )
+            )
+            OR a.created_at > (
+                SELECT MIN(d.created_at) FROM slots d
+                WHERE d.cafe_id = a.cafe_id
+                  AND d.start_time = a.start_time
+                  AND d.end_time = a.end_time
+            )
+        )
         """
     )
     op.create_unique_constraint('uq_slot_cafe_start_end', 'slots', ['cafe_id', 'start_time', 'end_time'])

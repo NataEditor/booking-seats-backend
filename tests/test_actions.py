@@ -22,8 +22,7 @@ from main import app
 from models.cafe import Cafe
 from models.user import UserRole
 from schemas.action import ActionCreate, ActionUpdate
-from services.action import get_action_or_raise
-from services.action import update_action as update_action_in_service
+from services.action import ActionService
 from services.cafe import ensure_manager_cafes_access
 
 
@@ -175,7 +174,7 @@ class ActionEndpointTests(IsolatedAsyncioTestCase):
         redis = AsyncMock()
         create = AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4()))
 
-        with patch('api.endpoints.action.create_action_service', new=create):
+        with patch('api.endpoints.action.ActionService.create_action', new=create):
             result = await create_action(payload, manager, session, redis)
 
         create.assert_awaited_once_with(payload, manager, session, redis)
@@ -214,7 +213,7 @@ class ActionEndpointTests(IsolatedAsyncioTestCase):
         redis = AsyncMock()
         update = AsyncMock(return_value=action)
 
-        with patch('api.endpoints.action.update_action_service', new=update):
+        with patch('api.endpoints.action.ActionService.update_action', new=update):
             result = await update_action(
                 action.id,
                 payload,
@@ -244,7 +243,7 @@ class ActionEndpointTests(IsolatedAsyncioTestCase):
 
         with patch('services.action.action_crud.update', new=update):
             with self.assertRaises(PermissionDeniedError):
-                await update_action_in_service(
+                await ActionService.update_action(
                     action,
                     payload,
                     manager,
@@ -334,7 +333,7 @@ class ActionServiceTests(IsolatedAsyncioTestCase):
 
         with patch('services.action.action_crud.get', new=lookup):
             with self.assertRaises(EntityNotFoundError) as raised:
-                await get_action_or_raise(
+                await ActionService.get_action_or_raise(
                     action_id,
                     AsyncMock(spec=AsyncSession),
                 )
