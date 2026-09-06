@@ -32,12 +32,55 @@ def custom_error_response(
     )
 
 
+_PYDANTIC_ERROR_TRANSLATIONS = {
+    'string_type': 'Должно быть строкой',
+    'int_type': 'Должно быть целым числом',
+    'int_parsing': 'Должно быть целым числом',
+    'float_type': 'Должно быть числом',
+    'float_parsing': 'Должно быть числом',
+    'decimal_type': 'Должно быть числом',
+    'decimal_parsing': 'Должно быть числом',
+    'bool_type': 'Должно быть логическим значением',
+    'bool_parsing': 'Должно быть логическим значением (true/false)',
+    'list_type': 'Должен быть списком',
+    'uuid_type': 'Должен быть валидным UUID',
+    'uuid_parsing': 'Должен быть валидным UUID',
+    'date_type': 'Должна быть валидной датой (ГГГГ-ММ-ДД)',
+    'time_type': 'Должно быть валидным временем (ЧЧ:ММ:СС)',
+    'datetime_type': 'Должно быть валидной датой-временем',
+    'finite_number': 'Должно быть конечным числом (NaN/Infinity недопустимы)',
+    'missing': 'Обязательное поле отсутствует',
+    'string_too_long': 'Строка слишком длинная',
+    'string_too_short': 'Строка слишком короткая',
+    'less_than_equal': 'Должно быть меньше или равно',
+    'greater_than_equal': 'Должно быть больше или равно',
+    'less_than': 'Должно быть меньше',
+    'greater_than': 'Должно быть больше',
+    'json_invalid': 'Некорректный JSON в теле запроса',
+    'json_type': 'Некорректный JSON в теле запроса',
+    'extra_forbidden': 'Обнаружены лишние поля',
+    'literal_error': 'Недопустимое значение',
+    'enum': 'Недопустимое значение',
+    'value_error': 'Некорректное значение',
+}
+
+
+def _translate_pydantic_error(error: dict) -> str:
+    """Переводит типовую ошибку pydantic на русский, иначе — исходный текст."""
+    error_type = error.get('type', '')
+    if error_type == 'value_error':
+        # У value_error в ctx может быть заданное русское сообщение (валидатор)
+        ctx = error.get('ctx') or {}
+        return str(ctx.get('error', 'Некорректное значение'))
+    return _PYDANTIC_ERROR_TRANSLATIONS.get(error_type, error.get('msg', ''))
+
+
 def _validation_error_message(exception: RequestValidationError) -> str:
-    """Собирает ошибки валидации в одно понятное сообщение."""
+    """Собирает ошибки валидации в одно понятное сообщение на русском."""
     messages = []
     for error in exception.errors():
         location = '.'.join(str(part) for part in error['loc'] if part != 'body')
-        message = error['msg']
+        message = _translate_pydantic_error(error)
         messages.append(f'{location}: {message}' if location else message)
     return '; '.join(messages)
 
