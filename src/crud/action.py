@@ -16,8 +16,6 @@ from models.action import Action
 from models.cafe import Cafe
 from schemas.action import ActionCreate, ActionInfo, ActionUpdate
 
-from core.redis import redis_dep
-
 
 class ActionCRUD(CRUDBase[Action, ActionCreate, ActionUpdate]):
     """CRUD операции для акций."""
@@ -26,49 +24,19 @@ class ActionCRUD(CRUDBase[Action, ActionCreate, ActionUpdate]):
         """Настраивает модель акции и связь с кафе."""
         super().__init__(Action, ActionInfo, rel_map={'cafes_id': 'cafes'})
 
-    async def create(
-        self,
-        obj_in: ActionCreate,
-        session: AsyncSession,
-        redis: redis_dep,
-    ) -> Action:
-        """Создаёт акцию, переводя конфликты БД в понятные исключения."""
-        try:
-            return await super().create(obj_in, session, redis)
-        except IntegrityError as error:
-            await session.rollback()
-            driver_error = error.orig
-            constrain = getattr(driver_error, 'constraint_name', None)
-            if constrain == 'actions_description_key':
-                raise ActionAlreadyExistsError from error
-            if constrain == 'uq_cafe_action':
-                raise CafeActionAlreadyExistsError from error
-            if constrain == 'fk_action_photo':
-                raise PhotoError from error
+    def _translate_integrity_error(self, error: IntegrityError) -> None:
+        """Переводит конфликты БД акции в понятные доменные исключения."""
+        driver_error = error.orig
+        constraint = getattr(driver_error, 'constraint_name', None)
+        if constraint == 'actions_description_key':
+            raise ActionAlreadyExistsError from error
+        if constraint == 'uq_cafe_action':
+            raise CafeActionAlreadyExistsError from error
+        if constraint == 'fk_action_photo':
+            raise PhotoError from error
+        super()._translate_integrity_error(error)
 
-    async def update(
-        self,
-        db_obj: Action,
-        obj_in: ActionUpdate,
-        session: AsyncSession,
-        redis: redis_dep,
-    ) -> Action:
-        """Обновляет акцию, переводя конфликты БД в понятные исключения."""
-        try:
-            return await super().update(db_obj, obj_in, session, redis)
-        except IntegrityError as error:
-            await session.rollback()
-            driver_error = error.orig
-            constrain = getattr(driver_error, 'constraint_name', None)
-            if constrain == 'actions_description_key':
-                raise ActionAlreadyExistsError from error
-            if constrain == 'uq_cafe_action':
-                raise CafeActionAlreadyExistsError from error
-            if constrain == 'fk_action_photo':
-                raise PhotoError from error
-
-    async def get(
-        self,
+    async def get(        self,
         obj_id: uuid.UUID,
         session: AsyncSession,
     ) -> Action | None:

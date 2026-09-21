@@ -52,11 +52,20 @@ class SchemaNullNanTests(TestCase):
         with self.assertRaises(ValidationError):
             TimeSlotCreate(start_time='10:00', end_time=None)
 
-    def test_slot_update_allows_null_optional(self) -> None:
-        """PATCH-схема принимает null в опциональном поле."""
-        update = TimeSlotUpdate(start_time=None)
-        self.assertIsNone(update.start_time)
+    def test_slot_update_rejects_null_time(self) -> None:
+        """PATCH-схема отклоняет явный null в start_time/end_time (422, а не 500)."""
+        with self.assertRaises(ValidationError):
+            TimeSlotUpdate(start_time=None)
+        with self.assertRaises(ValidationError):
+            TimeSlotUpdate(end_time=None)
+        with self.assertRaises(ValidationError):
+            TimeSlotUpdate(is_active=None)
 
+    def test_slot_update_allows_omitted_fields(self) -> None:
+        """PATCH-схема принимает частичное обновление без переданных полей."""
+        update = TimeSlotUpdate(description='Новое описание')
+        self.assertIsNone(update.start_time)
+        self.assertIsNone(update.end_time)
     def test_dish_create_rejects_null_name(self) -> None:
         """Обязательное name отклоняет null."""
         with self.assertRaises(ValidationError):

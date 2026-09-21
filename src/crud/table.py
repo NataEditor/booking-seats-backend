@@ -3,6 +3,7 @@ import uuid
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -92,11 +93,13 @@ class TableCRUD(CRUDBase[Table, TableCreate, TableUpdate]):
         cafe_id: uuid.UUID,
         obj_in: TableCreate,
         session: AsyncSession,
+        redis: Redis,
     ) -> Table:
         """Создаёт стол с привязкой к кафе.
 
         Базовый метод create() не подходит, так как cafe_id приходит
         из URL (path parameter), а не из тела запроса TableCreate.
+        Коммит выполняет get_session, здесь только flush для получения id.
         """
         logger.info('Создание стола в кафе: cafe_id={}, seat_number={}', cafe_id, obj_in.seat_number)
         db_table = Table(
@@ -105,8 +108,13 @@ class TableCRUD(CRUDBase[Table, TableCreate, TableUpdate]):
             description=obj_in.description,
         )
         session.add(db_table)
-        await session.commit()
-        await session.refresh(db_table)
+        try:
+            await session.flush()
+        except IntegrityError as error:
+            await session.rollback()
+            logger.error(f'Нарушение целостности БД при создании {self.model.__tablename__}: {error}')
+            self._translate_integrity_error(error)
+        await self._del_redis_key(*self._all_cache_keys(), redis=redis)
         logger.info('Стол создан: table_id={}, cafe_id={}', db_table.id, cafe_id)
         return await self.get(db_table.id, session)
 
@@ -117,12 +125,12 @@ class TableCRUD(CRUDBase[Table, TableCreate, TableUpdate]):
         session: AsyncSession,
         redis: Redis,
     ) -> Table:
-        """Обновляет стол с обработкой явного None."""
-        update_data = table_update.model_dump(exclude_unset=True)
+        """Обновляет стол.
 
-        if table_update.description is None and 'description' not in update_data:
-            update_data['description'] = None
-        return await super().update(table, update_data, session, redis)
+        exclude_unset=True в базовом update гарантирует, что непереданные поля
+        не меняются, а явный null в description корректно очищает описание.
+        """
+        return await super().update(table, table_update, session, redis)
 
 
 table_crud = TableCRUD()

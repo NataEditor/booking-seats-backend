@@ -1,11 +1,11 @@
 from datetime import time
 from typing import Annotated, Optional
 
-from pydantic import BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 from schemas.base import BaseInfoScheme, DescriptionScheme, IdScheme
 from schemas.cafe import CafeShortInfo
-from schemas.validators import normalize_time, validate_time_range
+from schemas.validators import field_cannot_be_null, normalize_time, validate_time_range
 
 StartTime = Annotated[time, BeforeValidator(normalize_time)]
 EndTime = Annotated[time, BeforeValidator(normalize_time)]
@@ -35,6 +35,11 @@ class TimeSlotUpdate(TimeSlotCreate):
     start_time: Optional[StartTime] = Field(None, description='Время начала')
     end_time: Optional[EndTime] = Field(None, description='Время окончания')
     is_active: Optional[bool] = Field(None, description='Активность слота')
+    check_not_null_fields = field_validator(
+        'start_time',
+        'end_time',
+        'is_active',
+    )(field_cannot_be_null)
 
 
 class TimeSlotShortInfo(IdScheme, TimeSlotBase):

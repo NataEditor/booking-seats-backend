@@ -26,7 +26,7 @@ ENV UV_PYTHON="python3.12" \
 WORKDIR /app
 
 
-COPY --chown=${USER_ID}:${GROUP_ID} pyproject.toml uv.lock /app/
+COPY --chown=${USER_ID}:${GROUP_ID} pyproject.toml uv.lock entrypoint.sh /app/
 
 
 RUN uv sync --no-dev --no-install-project --frozen && uv cache clean
@@ -37,4 +37,4 @@ COPY --chown=${USER_ID}:${GROUP_ID} ./src /app/src
 
 EXPOSE 8000/tcp
 
-ENTRYPOINT ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/bin/sh", "entrypoint.sh"]

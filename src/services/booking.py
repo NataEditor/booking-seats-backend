@@ -1,6 +1,6 @@
 import uuid
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Optional, Protocol
 
 from fastapi import HTTPException, status
 from loguru import logger
@@ -28,6 +28,16 @@ from services.notification import NotificationService
 from core.db import DBSession
 
 
+class TableSlotPair(Protocol):
+    """Контракт пары «стол-слот».
+
+    Ему соответствуют и ORM-объект BookingTablesSlots, и схема BookingTableSlot.
+    """
+
+    table_id: uuid.UUID
+    slot_id: uuid.UUID
+
+
 class BookingService:
     """Сервис создания бронирования."""
 
@@ -42,7 +52,10 @@ class BookingService:
         self.crud = booking_crud
         self.notification_service = notification_service
 
-    def split_tables_slots(self, tables_slots: list[tuple[int, int]]) -> tuple[list, list, list]:
+    def split_tables_slots(
+        self,
+        tables_slots: list[TableSlotPair],
+    ) -> tuple[list[tuple[uuid.UUID, uuid.UUID]], list[uuid.UUID], list[uuid.UUID]]:
         """Обрабатывает поле tables_slots из запроса.
 
         Разбивает на следующие списки для дальнейшего использования:
@@ -101,7 +114,13 @@ class BookingService:
         table_slot_ids: list,
         booking_id: Optional[uuid.UUID] = None,
     ) -> None:
-        """Проверяет на наличие повторного бронирования."""
+        """Проверяет на наличие повторного бронирования.
+
+        Критерии совпадают с partial unique index uniq_active_booking_table_slot:
+        учитываются только активные связи BookingTablesSlots, иначе отменённая
+        бронь (Booking.is_active=false) с активными связями блокировала бы
+        повторное бронирование на уровне БД.
+        """
         logger.info('Проверка на наличие повторного бронирования.')
         booking = (
             select(Booking)
@@ -111,6 +130,7 @@ class BookingService:
                 Booking.booking_date == booking_date,
                 Booking.status != StatusBooking.CANCELED,
                 Booking.is_active,
+                BookingTablesSlots.is_active,
                 tuple_(BookingTablesSlots.table_id, BookingTablesSlots.slot_id).in_(table_slot_ids),
             )
         )
@@ -324,22 +344,17 @@ class BookingService:
         await self.check_number_geusts_not_more_seat_number(
             guest_number=new_booking.guest_number,
             table_ids=table_ids,
-        )
+)
 
         try:
             booking = await self.crud.create(
                 obj_in=new_booking,
                 session=self.session,
                 current_user=current_user,
-            )
+)
         except IntegrityError as error:
-            await self.session.rollback()
-            if 'uniq_active_booking_table_slot' in str(error.orig):
-                raise TableAlreadyBookedError from error
-            raise error
-
+            await self._translate_booking_integrity_error(error)
         manager_notification, _ = await self.notification_service.create_booking_notifications(booking)
-
         await self.session.commit()
         await self.session.refresh(booking)
 
@@ -373,33 +388,8 @@ class BookingService:
         logger.info('Проверка, что изменение поля is_active на false проходит без изменения други полей')
         self.check_only_is_active_changes(update_data)
 
-        logger.info('Проверка изменения поля tables_slots')
         if update_data.tables_slots is not None:
-            table_slot_ids, table_ids, slot_ids = self.split_tables_slots(update_data.tables_slots)
-            await self.check_cafe_has_tables_slots(
-                cafe_id=db_booking.cafe_id,
-                table_ids=table_ids,
-                slot_ids=slot_ids,
-            )
-
-            if update_data.booking_date:
-                booking_date = update_data.booking_date
-            else:
-                booking_date = db_booking.booking_date
-
-            await self.check_double_booking_exsist(
-                cafe_id=db_booking.cafe_id,
-                booking_date=booking_date,
-                table_slot_ids=table_slot_ids,
-                booking_id=db_booking.id,
-            )
-
-            await self.check_user_have_same_slot(
-                booking_date=booking_date,
-                user_id=db_booking.user_id,
-                slot_ids=slot_ids,
-                booking_id=db_booking.id,
-            )
+            await self._check_updated_tables_slots(db_booking, update_data)
 
         logger.info(
             'Проверяет обновлялись ли поля tables_slots и/или booking_date '
@@ -412,6 +402,8 @@ class BookingService:
                 booking_date = db_booking.booking_date
             if update_data.tables_slots is None:
                 table_slot_ids, table_ids, slot_ids = self.split_tables_slots(db_booking.tables_slots)
+            else:
+                _, _, slot_ids = self.split_tables_slots(update_data.tables_slots)
             await self.check_booking_time_earlier_start_time_slot(
                 booking_date=booking_date,
                 slot_ids=slot_ids,
@@ -428,6 +420,8 @@ class BookingService:
                 guest_number = db_booking.guest_number
             if update_data.tables_slots is None:
                 table_slot_ids, table_ids, slot_ids = self.split_tables_slots(db_booking.tables_slots)
+            else:
+                _, table_ids, _ = self.split_tables_slots(update_data.tables_slots)
             await self.check_number_geusts_not_more_seat_number(
                 guest_number=guest_number,
                 table_ids=table_ids,
@@ -436,10 +430,54 @@ class BookingService:
         logger.info('Поверка на возможность редактирования поля is_active бронирования пользователем.')
         self.check_role_user_cant_not_changed_is_active(update_data, current_user)
 
-        booking = await self.crud.update(session=self.session, db_booking=db_booking, obj_in=update_data)
+        try:
+            booking = await self.crud.update(session=self.session, db_booking=db_booking, obj_in=update_data)
+        except IntegrityError as error:
+            await self._translate_booking_integrity_error(error)
 
         manager_notification, _ = await self.notification_service.update_booking_notifications(booking)
         await self.session.commit()
         await self.session.refresh(booking)
 
         return booking, manager_notification.id
+
+    async def _translate_booking_integrity_error(self, error: IntegrityError) -> None:
+        """Откатывает транзакцию и переводит гонку на стол+слот в доменную ошибку.
+
+        Метод всегда выбрасывает исключение: TableAlreadyBookedError при нарушении
+        partial unique index uniq_active_booking_table_slot, иначе — исходную ошибку.
+        """
+        await self.session.rollback()
+        if 'uniq_active_booking_table_slot' in str(error.orig):
+            raise TableAlreadyBookedError from error
+        raise error
+
+    async def _check_updated_tables_slots(
+        self,
+        db_booking: Booking,
+        update_data: BookingUpdate,
+    ) -> None:
+        """Проверяет новые столы и слоты бронирования перед сохранением."""
+        logger.info('Проверка изменения поля tables_slots')
+        table_slot_ids, table_ids, slot_ids = self.split_tables_slots(update_data.tables_slots)
+        await self.check_cafe_has_tables_slots(
+            cafe_id=db_booking.cafe_id,
+            table_ids=table_ids,
+            slot_ids=slot_ids,
+        )
+
+        booking_date = update_data.booking_date or db_booking.booking_date
+
+        await self.check_double_booking_exsist(
+            cafe_id=db_booking.cafe_id,
+            booking_date=booking_date,
+            table_slot_ids=table_slot_ids,
+            booking_id=db_booking.id,
+        )
+
+        await self.check_user_have_same_slot(
+            booking_date=booking_date,
+            user_id=db_booking.user_id,
+            slot_ids=slot_ids,
+            booking_id=db_booking.id,
+        )

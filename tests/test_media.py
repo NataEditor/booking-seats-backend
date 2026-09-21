@@ -167,3 +167,26 @@ class MediaCRUDTests(IsolatedAsyncioTestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.name.startswith(str(media.id)))
         self.assertEqual(result.suffix, '.jpg')
+
+    async def test_save_file_removes_orphan_file_on_flush_error(self) -> None:
+        """При сбое записи в БД файл не остаётся на диске (нет файла-сироты)."""
+        session = _make_session()
+        session.flush = AsyncMock(side_effect=RuntimeError('db down'))
+        crud = MediaCRUD(session)
+        upload = _make_upload(_make_png_bytes(), filename='photo.png', content_type='image/png')
+
+        with self.assertRaises(RuntimeError):
+            await crud.save_file(upload)
+
+        self.assertEqual(list(media_module.MEDIA_ROOT.glob('*.jpg')), [])
+
+    async def test_get_file_path_returns_none_when_file_missing_on_disk(self) -> None:
+        """get_file_path возвращает None, если запись есть, а файла на диске нет."""
+        session = _make_session()
+        media_id = uuid.uuid4()
+        session.execute.return_value = _execute_result_for(media_id)
+        crud = MediaCRUD(session)
+
+        result = await crud.get_file_path(media_id)
+
+        self.assertIsNone(result)

@@ -26,7 +26,8 @@ class CafeDish(Base):
     dish_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey('dishes.id', name='fk_cafe_dishes_dish_id'),
-    )
+        index=True,
+)
 
 
 class Dish(Base):

@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import UUID, ForeignKey, Integer
+from sqlalchemy import UUID, CheckConstraint, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base_model import Base, DescriptionMixin
@@ -28,6 +28,10 @@ class Table(Base, DescriptionMixin):
         'BookingTablesSlots',
         back_populates='table',
         lazy='selectin',
+    )
+
+    __table_args__ = (
+        CheckConstraint('seat_number > 0', name='check_table_seat_number_positive'),
     )
 
     def __repr__(self) -> str:

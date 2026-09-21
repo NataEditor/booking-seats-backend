@@ -66,13 +66,20 @@ async def create_slot(
     slot_create: TimeSlotCreate,
     current_user: StaffUser,
     session: DBSession,
+    redis: redis_dep,
     _cafe: Cafe = Depends(get_cafe_or_404),
 ) -> Slot:
     """Создает новый временной слот в кафе.
 
     Менеджер создает слоты только в своём кафе.
     """
-    return await SlotService.create_slot_in_cafe(cafe_id, slot_create, current_user, session)
+    return await SlotService.create_slot_in_cafe(
+        cafe_id,
+        slot_create,
+        current_user,
+        session,
+        redis,
+    )
 
 
 @router.get(
@@ -119,5 +126,11 @@ async def update_slot(
 
     Менеджер обновляет слоты только в своём кафе.
     """
-    ensure_manager_cafe_access(current_user, cafe_id)
-    return await slot_crud.update(_slot, slot_update, session, redis)
+    return await SlotService.update_slot_in_cafe(
+        cafe_id,
+        _slot,
+        slot_update,
+        current_user,
+        session,
+        redis,
+    )

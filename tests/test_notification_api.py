@@ -182,7 +182,7 @@ class NotificationAPITests(IsolatedAsyncioTestCase):
         enqueue = Mock()
 
         with patch(
-            'api.endpoints.notification.send_booking_notification.delay',
+            'api.endpoints.notification.enqueue_notification',
             new=enqueue,
         ):
             response = await self.client.post(
@@ -198,8 +198,7 @@ class NotificationAPITests(IsolatedAsyncioTestCase):
             booking_id=booking_id,
             notification_id=notification.id,
         )
-        enqueue.assert_called_once_with(str(notification.id))
-
+        enqueue.assert_called_once_with(notification.id)
 
 class NotificationRetryServiceTests(IsolatedAsyncioTestCase):
     """Проверяет безопасный перевод FAILED-уведомления в очередь."""

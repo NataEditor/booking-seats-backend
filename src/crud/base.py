@@ -52,8 +52,17 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         else:
             self.rel_map = {}
 
-    async def get(
-        self,
+    def _translate_integrity_error(self, error: IntegrityError) -> None:
+        """Переводит нарушение целостности БД в доменное исключение.
+
+        Базовая реализация бросает обобщённый BadRequestError. Наследники
+        переопределяют метод, чтобы вернуть клиенту точную причину конфликта
+        (например, конкретный уникальный constraint).
+        """
+        message = f'{self.model.__tablename__} с такими параметрами уже существует'
+        raise BadRequestError(message) from error
+
+    async def get(        self,
         obj_id: uuid.UUID,
         session: AsyncSession,
         options: Optional[List[interfaces.UserDefinedOption]] = None,
@@ -249,14 +258,12 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         except IntegrityError as e:
             await session.rollback()
             logger.error(f'Нарушение целостности БД при создании {self.model.__tablename__}: {e}')
-            message = f'{self.model.__tablename__} с такими параметрами уже существует'
-            raise BadRequestError(message) from e
+            self._translate_integrity_error(e)
         except Exception as e:
             logger.error(f'Ошибка при сохранении объекта: {db_obj}.\n {e}')
             raise
 
-    async def update(
-        self,
+    async def update(        self,
         db_obj: ModelType,
         obj_in: UpdateSchemaType,
         session: AsyncSession,
@@ -299,8 +306,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         except IntegrityError as e:
             await session.rollback()
             logger.error(f'Нарушение целостности БД при изменении {self.model.__tablename__}: {e}')
-            message = f'{self.model.__tablename__} с такими параметрами уже существует'
-            raise BadRequestError(message) from e
+            self._translate_integrity_error(e)
         except Exception as e:
             logger.error(f'Ошибка при обновлении объекта "{db_obj}":\n {e}')
             raise

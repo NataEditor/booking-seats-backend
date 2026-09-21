@@ -94,10 +94,17 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        """Строка подключения к БД."""
+        """Строка подключения к БД.
+
+        Логин, пароль и имя БД квотируются: спецсимволы (@, :, /) в пароле
+        иначе сломают разбор DSN.
+        """
+        user = quote(self.postgres_user, safe='')
+        password = quote(self.postgres_password, safe='')
+        database = quote(self.postgres_db, safe='')
         return (
-            f'postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@'
-            f'{self.postgres_server}:{self.postgres_port}/{self.postgres_db}'
+            f'postgresql+asyncpg://{user}:{password}@'
+            f'{self.postgres_server}:{self.postgres_port}/{database}'
         )
 
     @property

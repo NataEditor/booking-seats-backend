@@ -62,8 +62,7 @@ class Booking(Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID,
-        ForeignKey('users.id', name='fk_booking_user_id_user'),
-        index=True,
+ForeignKey('users.id', name='fk_booking_user_id_user'),
     )
     user: Mapped['User'] = relationship('User')  # noqa: F821
     cafe_id: Mapped[uuid.UUID] = mapped_column(
@@ -103,5 +102,6 @@ class Booking(Base):
             'reminder_minutes_before IS NULL OR reminder_minutes_before > 0',
             name='check_booking_reminder_minutes_positive',
         ),
+        CheckConstraint('guest_number > 0', name='check_booking_guest_number_positive'),
         Index('user_booking_date', 'user_id', 'booking_date'),
     )

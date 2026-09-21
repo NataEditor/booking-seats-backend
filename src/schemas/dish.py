@@ -36,10 +36,9 @@ class DishBase(BaseModel):
 class DishCreate(DishBase):
     """Схема создания блюда."""
 
-    cafes_id: list[uuid.UUID] = Field(default_factory=list)
+    cafes_id: list[uuid.UUID] = Field(..., min_length=1)
 
     check_not_empty_fields = field_validator('name', 'cafes_id')(validate_empty_field)
-
 
 class DishInfo(IdScheme, DishBase, BaseInfoScheme):
     """Схема полных данных о блюде."""

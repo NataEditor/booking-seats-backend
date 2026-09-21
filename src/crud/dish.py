@@ -12,8 +12,6 @@ from models.cafe import Cafe
 from models.dish import Dish
 from schemas.dish import DishCreate, DishInfo, DishUpdate
 
-from core.redis import redis_dep
-
 
 class DishCRUD(CRUDBase[Dish, DishCreate, DishUpdate]):
     """CRUD-операции для блюд."""
@@ -22,35 +20,11 @@ class DishCRUD(CRUDBase[Dish, DishCreate, DishUpdate]):
         """Настраивает модель блюда и связь с кафе."""
         super().__init__(Dish, DishInfo, rel_map={'cafes_id': 'cafes'})
 
-    async def create(
-        self,
-        obj_in: DishCreate,
-        session: AsyncSession,
-        redis: redis_dep,
-    ) -> Dish:
-        """Создаёт блюдо, преобразуя конфликт уникальности имени."""
-        try:
-            return await super().create(obj_in, session, redis)
-        except IntegrityError as error:
-            await session.rollback()
-            raise DishAlreadyExistsError from error
+    def _translate_integrity_error(self, error: IntegrityError) -> None:
+        """Переводит конфликт уникальности имени блюда в доменную ошибку."""
+        raise DishAlreadyExistsError from error
 
-    async def update(
-        self,
-        db_obj: Dish,
-        obj_in: DishUpdate,
-        session: AsyncSession,
-        redis: redis_dep,
-    ) -> Dish:
-        """Обновляет блюдо, преобразуя конфликт уникальности имени."""
-        try:
-            return await super().update(db_obj, obj_in, session, redis)
-        except IntegrityError as error:
-            await session.rollback()
-            raise DishAlreadyExistsError from error
-
-    async def get(
-        self,
+    async def get(        self,
         obj_id: uuid.UUID,
         session: AsyncSession,
     ) -> Dish | None:

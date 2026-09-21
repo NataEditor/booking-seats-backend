@@ -1,7 +1,7 @@
 import uuid
 from datetime import time
 
-from sqlalchemy import UUID, ForeignKey, Time, UniqueConstraint
+from sqlalchemy import UUID, CheckConstraint, ForeignKey, Time, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base_model import Base, DescriptionMixin
@@ -39,6 +39,7 @@ class Slot(Base, DescriptionMixin):
             'end_time',
             name='uq_slot_cafe_start_end',
         ),
+        CheckConstraint('end_time > start_time', name='check_slot_time_range'),
     )
 
     def __repr__(self) -> str:

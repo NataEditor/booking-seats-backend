@@ -58,6 +58,7 @@ async def create_table(
     table_create: TableCreate,
     user: StaffUser,
     session: DBSession,
+    redis: redis_dep,
     _cafe: Cafe = Depends(get_cafe_or_404),
 ) -> Table:
     """Создание нового стола в кафе.
@@ -66,7 +67,7 @@ async def create_table(
     Администратор создает в любом кафе.
     """
     ensure_manager_cafe_access(user, cafe_id)
-    return await table_crud.create_with_cafe(cafe_id, table_create, session)
+    return await table_crud.create_with_cafe(cafe_id, table_create, session, redis)
 
 
 @router.get(

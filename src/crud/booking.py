@@ -100,6 +100,10 @@ class BookingCRUD(CRUDBase[Booking, BookingCreate, BookingUpdate]):
 
         Переопределяет базовый метод create, создавая
         из одного запроса объект модели Booking и объект модели BookingTableSlot.
+
+        Контракт транзакции: метод выполняет только flush, коммит остаётся
+        за вызывающей стороной (BookingService), так как между созданием брони
+        и коммитом формируются уведомления в той же транзакции.
         """
         logger.info('Создание нового бронирования')
         obj_in_data = obj_in.model_dump()
@@ -126,7 +130,12 @@ class BookingCRUD(CRUDBase[Booking, BookingCreate, BookingUpdate]):
         obj_in: BookingUpdate,
         session: AsyncSession,
     ) -> Booking:
-        """Обновляет объект бронирования."""
+        """Обновляет объект бронирования.
+
+        Контракт транзакции: метод выполняет только flush, коммит остаётся
+        за вызывающей стороной (BookingService), так как между обновлением брони
+        и коммитом формируются уведомления в той же транзакции.
+        """
         logger.info('Обновление бронирования id {}.', db_booking.id)
         update_data = obj_in.model_dump(exclude_unset=True)
 

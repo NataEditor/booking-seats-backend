@@ -13,6 +13,8 @@ from models.booking import Booking, BookingTablesSlots, StatusBooking
 from models.slots import Slot
 from schemas.slots import TimeSlotCreate, TimeSlotInfo, TimeSlotUpdate
 
+from core.redis import redis_dep
+
 
 class SlotCRUD(CRUDBase[Slot, TimeSlotCreate, TimeSlotUpdate]):
     """CRUD-операции для временных слотов."""
@@ -117,11 +119,13 @@ class SlotCRUD(CRUDBase[Slot, TimeSlotCreate, TimeSlotUpdate]):
         cafe_id: uuid.UUID,
         obj_in: TimeSlotCreate,
         session: AsyncSession,
+        redis: redis_dep,
     ) -> Slot:
         """Создаёт слот с привязкой к кафе.
 
         Базовый метод create() не подходит, так как cafe_id приходит
         из URL (path parameter), а не из тела запроса TimeSlotCreate.
+        Коммит выполняет get_session, здесь только flush для получения id.
         """
         logger.info(
             'Создание слота в кафе: cafe_id={}, start_time={}, end_time={}',
@@ -137,12 +141,13 @@ class SlotCRUD(CRUDBase[Slot, TimeSlotCreate, TimeSlotUpdate]):
         )
         session.add(db_slot)
         try:
-            await session.commit()
+            await session.flush()
         except IntegrityError as error:
-            logger.error(f'Нарушение целостности БД при изменении {self.model.__tablename__}: {error}')
+            await session.rollback()
+            logger.error(f'Нарушение целостности БД при создании {self.model.__tablename__}: {error}')
             message = f'{self.model.__tablename__} с такими параметрами уже существует'
             raise BadRequestError(message) from error
-        await session.refresh(db_slot)
+        await self._del_redis_key(*self._all_cache_keys(), redis=redis)
         logger.info('Слот создан: slot_id={}, cafe_id={}', db_slot.id, cafe_id)
         return await self.get(db_slot.id, session)
 

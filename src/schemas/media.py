@@ -1,13 +1,6 @@
 import uuid
 
-from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict
-
-
-class MediaData(BaseModel):
-    """Данные загрузки изображения (по OpenAPI)."""
-
-    file: UploadFile
 
 
 class MediaInfo(BaseModel):

@@ -24,7 +24,8 @@ class CafeAction(Base):
     action_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey('actions.id', name='fk_cafe_actions_action_id'),
-    )
+        index=True,
+)
 
 
 class Action(Base):

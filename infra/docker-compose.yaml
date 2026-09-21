@@ -7,6 +7,13 @@ services:
       - ./.env
     ports:
       - "8000:8000"
+    volumes:
+      # Bind-mount исходников и медиа для hot-reload в dev-режиме
+      - ../src:/app
+      - media_data:/app/media
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     depends_on:
       db:
         condition: service_healthy
@@ -14,6 +21,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('localhost', 8000), 5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
 
   celery-worker:
     build: ../
@@ -132,3 +146,4 @@ volumes:
   pgdata:
   rabbitmq_data:
   redis_data:
+  media_data:

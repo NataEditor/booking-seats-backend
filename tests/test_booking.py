@@ -3,14 +3,16 @@ from collections.abc import AsyncGenerator
 from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies.booking import get_booking_service
 from api.dependencies.logging import get_current_user_with_logging
 from exceptions.base import APIError
+from exceptions.booking import TableAlreadyBookedError
 from main import app
 from models.booking import StatusBooking
 from models.user import UserRole
@@ -320,7 +322,7 @@ class BookingAPITests(IsolatedAsyncioTestCase):
         )
         enqueue = Mock()
 
-        with patch('api.endpoints.booking.send_booking_notification.delay', new=enqueue):
+        with patch('api.endpoints.booking.enqueue_notification', new=enqueue):
             response = await self.client.post('/api/v1/booking', json=payload)
 
         self.assertEqual(response.status_code, 201)
@@ -330,8 +332,7 @@ class BookingAPITests(IsolatedAsyncioTestCase):
         self.assertIs(current_user, self.current_user)
         self.assertEqual(new_booking.cafe_id, booking.cafe_id)
         self.assertEqual(new_booking.reminder_minutes_before, 45)
-        enqueue.assert_called_once_with(str(notification_id))
-
+        enqueue.assert_called_once_with(notification_id)
     async def test_create_rejects_past_booking_date_before_business_checks(self) -> None:
         """Дата в прошлом отклоняется схемой до обращения к сервисам."""
         booking = _make_booking(booking_date=date.today() - timedelta(days=1))
@@ -368,7 +369,7 @@ class BookingAPITests(IsolatedAsyncioTestCase):
         )
         enqueue = Mock()
 
-        with patch('api.endpoints.booking.send_booking_notification.delay', new=enqueue):
+        with patch('api.endpoints.booking.enqueue_notification', new=enqueue):
             response = await self.client.patch(
                 f'/api/v1/booking/{booking.id}',
                 json={'note': 'Тихое место'},
@@ -381,8 +382,7 @@ class BookingAPITests(IsolatedAsyncioTestCase):
         self.assertIs(call['current_user'], self.current_user)
         self.assertEqual(call['booking_id'], booking.id)
         self.assertEqual(call['update_data'].note, 'Тихое место')
-        enqueue.assert_called_once_with(str(notification_id))
-
+        enqueue.assert_called_once_with(notification_id)
     async def test_patch_passes_tables_guests_and_date_to_service(self) -> None:
         """PATCH передаёт сервису новые столы, слоты, дату и число гостей."""
         booking = _make_booking()
@@ -395,7 +395,7 @@ class BookingAPITests(IsolatedAsyncioTestCase):
             notification_id,
         )
 
-        with patch('api.endpoints.booking.send_booking_notification.delay'):
+        with patch('api.endpoints.booking.enqueue_notification'):
             response = await self.client.patch(
                 f'/api/v1/booking/{booking.id}',
                 json={
@@ -406,7 +406,6 @@ class BookingAPITests(IsolatedAsyncioTestCase):
                     'guest_number': 3,
                 },
             )
-
         self.assertEqual(response.status_code, 200)
         update_data = self.booking_service.update_booking_with_notifications.await_args.kwargs['update_data']
         self.assertEqual(update_data.booking_date, booking_date)
@@ -485,6 +484,22 @@ class BookingRulesTests(IsolatedAsyncioTestCase):
         self.assertEqual(table_ids, [first.table_id, second.table_id])
         self.assertEqual(slot_ids, [first.slot_id, second.slot_id])
 
+    async def test_double_booking_check_matches_partial_index_criteria(self) -> None:
+        """Проверка занятости учитывает активность связи, как partial unique index."""
+        session = AsyncMock(spec=AsyncSession)
+        result = MagicMock()
+        result.scalars.return_value.first.return_value = None
+        session.execute.return_value = result
+        self.service.session = session
+
+        await self.service.check_double_booking_exsist(
+            cafe_id=uuid.uuid4(),
+            booking_date=date.today(),
+            table_slot_ids=[(uuid.uuid4(), uuid.uuid4())],
+        )
+
+        query = str(session.execute.await_args.args[0])
+        self.assertIn('bookingtableslots.is_active', query)
     async def test_create_runs_business_checks_and_persists_notifications(self) -> None:
         """Сервис проверяет новую бронь и сохраняет её вместе с уведомлениями."""
         user = _make_user(UserRole.USER)
@@ -618,13 +633,63 @@ class BookingRulesTests(IsolatedAsyncioTestCase):
             session=self.service.session,
             db_booking=booking,
             obj_in=update_data,
-        )
+)
         self.service.notification_service.update_booking_notifications.assert_awaited_once_with(
             updated_booking,
         )
         self.service.session.commit.assert_awaited_once_with()
         self.service.session.refresh.assert_awaited_once_with(updated_booking)
 
+    async def test_update_translates_race_condition_to_conflict(self) -> None:
+        """Гонка на стол+слот при обновлении превращается в 409, а не 500."""
+        user = _make_user(UserRole.ADMIN)
+        booking = _make_booking()
+        update_data = BookingUpdate(note='Тихое место')
+        error = IntegrityError(
+            'INSERT',
+            {},
+            Exception('duplicate key value violates unique constraint "uniq_active_booking_table_slot"'),
+        )
+
+        self.service.get_booking_or_raise = AsyncMock(return_value=booking)
+        self.service.check_user_permission = AsyncMock()
+        self.service.check_booking_status = Mock()
+        self.service.check_only_is_active_changes = Mock()
+        self.service.check_role_user_cant_not_changed_is_active = Mock()
+        self.service.crud.update = AsyncMock(side_effect=error)
+
+        with self.assertRaises(TableAlreadyBookedError):
+            await self.service.update_booking_with_notifications(
+                current_user=user,
+                booking_id=booking.id,
+                update_data=update_data,
+            )
+
+        self.service.session.rollback.assert_awaited_once_with()
+        self.service.session.commit.assert_not_awaited()
+
+    async def test_update_reraises_unrelated_integrity_error(self) -> None:
+        """Прочие нарушения целостности не подменяются ошибкой занятости."""
+        user = _make_user(UserRole.ADMIN)
+        booking = _make_booking()
+        update_data = BookingUpdate(note='Тихое место')
+        error = IntegrityError('INSERT', {}, Exception('some other constraint'))
+
+        self.service.get_booking_or_raise = AsyncMock(return_value=booking)
+        self.service.check_user_permission = AsyncMock()
+        self.service.check_booking_status = Mock()
+        self.service.check_only_is_active_changes = Mock()
+        self.service.check_role_user_cant_not_changed_is_active = Mock()
+        self.service.crud.update = AsyncMock(side_effect=error)
+
+        with self.assertRaises(IntegrityError):
+            await self.service.update_booking_with_notifications(
+                current_user=user,
+                booking_id=booking.id,
+                update_data=update_data,
+            )
+
+        self.service.session.rollback.assert_awaited_once_with()
     async def test_manager_can_access_booking_of_assigned_cafe(self) -> None:
         """Менеджеру доступна бронь другого пользователя в своём кафе."""
         cafe_id = uuid.uuid4()

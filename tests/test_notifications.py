@@ -12,10 +12,10 @@ from tasks.base import shutdown_worker_event_loop
 from tasks.channels.email import EmailChannel
 from tasks.notifications import (
     _dispatch_notification,
+    enqueue_notification,
     process_pending_due_notifications,
     send_booking_notification,
 )
-
 
 class AsyncSessionContext:
     """Минимальный async context manager для сессии задачи."""
@@ -103,7 +103,7 @@ class CeleryNotificationTaskTests(TestCase):
         session = AsyncMock(spec=AsyncSession)
         notification_ids = [uuid.uuid4(), uuid.uuid4()]
         get_due = AsyncMock(return_value=notification_ids)
-        delay = Mock()
+        enqueue = Mock()
 
         with (
             patch(
@@ -115,8 +115,8 @@ class CeleryNotificationTaskTests(TestCase):
                 new=get_due,
             ),
             patch(
-                'tasks.notifications.send_booking_notification.delay',
-                new=delay,
+                'tasks.notifications.enqueue_notification',
+                new=enqueue,
             ),
         ):
             result = process_pending_due_notifications.apply(
@@ -128,11 +128,29 @@ class CeleryNotificationTaskTests(TestCase):
         get_due.assert_awaited_once_with(session=session, limit=10)
         session.commit.assert_awaited_once()
         self.assertEqual(
-            [call.args[0] for call in delay.call_args_list],
-            [str(item) for item in notification_ids],
+            [call.args[0] for call in enqueue.call_args_list],
+            notification_ids,
         )
 
+    def test_enqueue_notification_returns_true_on_success(self) -> None:
+        """enqueue_notification возвращает True, если задача поставлена в очередь."""
+        notification_id = uuid.uuid4()
+        delay = Mock()
 
+        with patch('tasks.notifications.send_booking_notification.delay', new=delay):
+            result = enqueue_notification(notification_id)
+
+        self.assertTrue(result)
+        delay.assert_called_once_with(str(notification_id))
+
+    def test_enqueue_notification_swallows_broker_error(self) -> None:
+        """Сбой брокера не пробрасывается наружу: бронь уже закоммичена."""
+        delay = Mock(side_effect=ConnectionError('rabbitmq down'))
+
+        with patch('tasks.notifications.send_booking_notification.delay', new=delay):
+            result = enqueue_notification(uuid.uuid4())
+
+        self.assertFalse(result)
 class NotificationServiceTests(TestCase):
     """Проверяет расчёт времени напоминания."""
 

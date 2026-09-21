@@ -15,9 +15,8 @@ from api.endpoints.action import (
     update_action,
 )
 from crud.action import action_crud
-from crud.base import CRUDBase
 from exceptions.action import ActionAlreadyExistsError
-from exceptions.common import EntityNotFoundError, PermissionDeniedError
+from exceptions.common import BadRequestError, EntityNotFoundError, PermissionDeniedError
 from main import app
 from models.cafe import Cafe
 from models.user import UserRole
@@ -299,29 +298,25 @@ class ActionCrudTests(IsolatedAsyncioTestCase):
 
     async def test_create_turns_integrity_error_into_domain_error(self) -> None:
         """Конфликт уникальности не утекает из CRUD как SQLAlchemy ошибка."""
-        session = AsyncMock(spec=AsyncSession)
-        redis = AsyncMock()
-        payload = ActionCreate(
-            description='Повтор акции',
-            photo_id=None,
-            cafes_id=[uuid.uuid4()],
-        )
         integrity_error = IntegrityError(
             'INSERT',
             {},
             SimpleNamespace(constraint_name='actions_description_key'),
         )
 
-        with patch.object(
-            CRUDBase,
-            'create',
-            new=AsyncMock(side_effect=integrity_error),
-        ):
-            with self.assertRaises(ActionAlreadyExistsError):
-                await action_crud.create(payload, session, redis)
+        with self.assertRaises(ActionAlreadyExistsError):
+            action_crud._translate_integrity_error(integrity_error)
 
-        session.rollback.assert_awaited_once()
+    async def test_create_falls_back_to_generic_error_for_unknown_constraint(self) -> None:
+        """Неизвестный constraint переводится в обобщённую ошибку запроса."""
+        integrity_error = IntegrityError(
+            'INSERT',
+            {},
+            SimpleNamespace(constraint_name='some_other_constraint'),
+        )
 
+        with self.assertRaises(BadRequestError):
+            action_crud._translate_integrity_error(integrity_error)
 
 class ActionServiceTests(IsolatedAsyncioTestCase):
     """Проверяет доменный поиск акции."""

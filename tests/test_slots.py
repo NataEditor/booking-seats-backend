@@ -237,7 +237,7 @@ class SlotAPITests(IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ),
             patch(
-                'api.endpoints.slots.slot_crud.create_with_cafe',
+                'services.slot.slot_crud.create_with_cafe',
                 new=create_with_cafe,
             ),
         ):
@@ -249,21 +249,21 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()['id'], str(slot.id))
         create_with_cafe.assert_awaited_once()
-        cafe_id, request_schema, session = create_with_cafe.await_args.args
+        cafe_id, request_schema, session, redis = create_with_cafe.await_args.args
         self.assertEqual(cafe_id, self.cafe_id)
         self.assertEqual(request_schema.start_time, time(10, 0))
         self.assertEqual(request_schema.end_time, time(12, 0))
         self.assertIs(session, self.session)
+        self.assertIs(redis, self.redis)
 
     async def test_slot_creation_validates_time_range(self) -> None:
         """Создание слота проверяет, что start_time < end_time."""
         create_with_cafe = AsyncMock()
 
         with patch(
-            'api.endpoints.slots.slot_crud.create_with_cafe',
+            'services.slot.slot_crud.create_with_cafe',
             new=create_with_cafe,
-        ):
-            response = await self.client.post(
+        ):            response = await self.client.post(
                 f'/api/v1/cafes/{self.cafe_id}/time_slots',
                 json={
                     'start_time': '12:00',
@@ -423,7 +423,13 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self._set_slot(slot)
         update = AsyncMock(return_value=updated_slot)
 
-        with patch('api.endpoints.slots.slot_crud.update', new=update):
+        with (
+            patch(
+                'services.slot.SlotService.check_slot_not_overlapping',
+                new=AsyncMock(),
+            ),
+            patch('services.slot.slot_crud.update', new=update),
+        ):
             response = await self.client.patch(
                 f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
                 json={
@@ -436,7 +442,6 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['id'], str(updated_slot.id))
         update.assert_awaited_once()
-
     async def test_admin_can_update_slot(self) -> None:
         """PATCH /cafes/{cafe_id}/time_slots/{slot_id} обновляет слот."""
         slot = _make_slot(cafe_id=self.cafe_id)
@@ -449,7 +454,13 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self._set_slot(slot)
         update = AsyncMock(return_value=updated_slot)
 
-        with patch('api.endpoints.slots.slot_crud.update', new=update):
+        with (
+            patch(
+                'services.slot.SlotService.check_slot_not_overlapping',
+                new=AsyncMock(),
+            ),
+            patch('services.slot.slot_crud.update', new=update),
+        ):
             response = await self.client.patch(
                 f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
                 json={
@@ -478,7 +489,7 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self._set_slot(slot)
         update = AsyncMock()
 
-        with patch('api.endpoints.slots.slot_crud.update', new=update):
+        with patch('services.slot.slot_crud.update', new=update):
             response = await self.client.patch(
                 f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
                 json={'description': 'Недоступное обновление'},
@@ -501,12 +512,11 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         self._set_slot(slot)
         update = AsyncMock()
 
-        with patch('api.endpoints.slots.slot_crud.update', new=update):
+        with patch('services.slot.slot_crud.update', new=update):
             response = await self.client.patch(
                 f'/api/v1/cafes/{foreign_cafe_id}/time_slots/{slot.id}',
                 json={'description': 'Недоступное обновление'},
             )
-
         self.assertEqual(response.status_code, 403)
         self.assertEqual(
             response.json(),
@@ -555,6 +565,89 @@ class SlotAPITests(IsolatedAsyncioTestCase):
         )
         create_with_cafe.assert_not_awaited()
 
+    async def test_update_slot_rejects_overlapping(self) -> None:
+        """Обновление слота с пересечением по времени отклоняется (400)."""
+        from exceptions.slot import SlotOverlapError
+
+        slot = _make_slot(cafe_id=self.cafe_id)
+        self._set_slot(slot)
+        update = AsyncMock()
+
+        with (
+            patch(
+                'services.slot.SlotService.check_slot_not_overlapping',
+                new=AsyncMock(side_effect=SlotOverlapError),
+            ),
+            patch('services.slot.slot_crud.update', new=update),
+        ):
+            response = await self.client.patch(
+                f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
+                json={'start_time': '11:00', 'end_time': '13:00'},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json(),
+            {'code': 400, 'message': 'Слот пересекается по времени с существующим слотом кафе.'},
+        )
+        update.assert_not_awaited()
+
+    async def test_update_slot_excludes_itself_from_overlap_check(self) -> None:
+        """При обновлении слот не сравнивается сам с собой."""
+        slot = _make_slot(cafe_id=self.cafe_id)
+        self._set_slot(slot)
+        update = AsyncMock(return_value=slot)
+        check = AsyncMock()
+
+        with (
+            patch('services.slot.SlotService.check_slot_not_overlapping', new=check),
+            patch('services.slot.slot_crud.update', new=update),
+        ):
+            response = await self.client.patch(
+                f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
+                json={'description': 'Новое описание'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        check.assert_awaited_once()
+        self.assertEqual(check.await_args.kwargs['exclude_slot_id'], slot.id)
+
+    async def test_update_slot_rejects_inverted_range_on_partial_update(self) -> None:
+        """Частичное обновление проверяет итоговую пару start/end (422)."""
+        slot = _make_slot(
+            cafe_id=self.cafe_id,
+            start_time=time(10, 0),
+            end_time=time(12, 0),
+        )
+        self._set_slot(slot)
+        update = AsyncMock()
+
+        with patch('services.slot.slot_crud.update', new=update):
+            response = await self.client.patch(
+                f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
+                json={'start_time': '13:00'},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json(),
+            {'code': 422, 'message': 'Время начала должно быть меньше времени окончания'},
+        )
+        update.assert_not_awaited()
+    async def test_update_slot_rejects_explicit_null(self) -> None:
+        """Явный null в start_time/end_time отклоняется (422), а не 500."""
+        slot = _make_slot(cafe_id=self.cafe_id)
+        self._set_slot(slot)
+        update = AsyncMock()
+
+        with patch('services.slot.slot_crud.update', new=update):
+            response = await self.client.patch(
+                f'/api/v1/cafes/{self.cafe_id}/time_slots/{slot.id}',
+                json={'start_time': None},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        update.assert_not_awaited()
 
 class SlotCRUDTests(IsolatedAsyncioTestCase):
     """Проверяет CRUD-операции для слотов."""
@@ -563,8 +656,8 @@ class SlotCRUDTests(IsolatedAsyncioTestCase):
         """create_with_cafe использует cafe_id из URL, а не из тела запроса."""
         cafe_id = uuid.uuid4()
         session = AsyncMock(spec=AsyncSession)
-        session.commit = AsyncMock()
-        session.refresh = AsyncMock()
+        session.flush = AsyncMock()
+        redis = AsyncMock()
 
         obj_in = TimeSlotCreate(
             start_time=time(10, 0),
@@ -575,15 +668,14 @@ class SlotCRUDTests(IsolatedAsyncioTestCase):
         mock_slot = _make_slot(cafe_id=cafe_id, start_time=time(10, 0), end_time=time(12, 0))
 
         with patch.object(slot_crud, 'get', new=AsyncMock(return_value=mock_slot)):
-            result = await slot_crud.create_with_cafe(cafe_id, obj_in, session)
+            result = await slot_crud.create_with_cafe(cafe_id, obj_in, session, redis)
 
         self.assertEqual(result.cafe_id, cafe_id)
         self.assertEqual(result.start_time, time(10, 0))
         self.assertEqual(result.end_time, time(12, 0))
         session.add.assert_called_once()
-        session.commit.assert_awaited_once()
-        session.refresh.assert_awaited_once()
-
+        session.flush.assert_awaited_once()
+        redis.delete.assert_awaited_once()
     async def test_get_by_cafe_filters_by_show_active(self) -> None:
         """get_by_cafe корректно фильтрует по show_active."""
         cafe_id = uuid.uuid4()

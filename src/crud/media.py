@@ -80,7 +80,6 @@ class MediaCRUD:
 
         media_id = uuid.uuid4()
         file_path = MEDIA_ROOT / f'{media_id}.jpg'
-
         try:
             await asyncio.to_thread(file_path.write_bytes, jpeg_bytes)
         except OSError:
@@ -89,7 +88,12 @@ class MediaCRUD:
 
         media = Media(id=media_id, name=upload.filename or f'{media_id}.jpg')
         self.session.add(media)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except Exception:
+            # Не оставляем файл-сироту на диске, если запись в БД не удалась
+            await asyncio.to_thread(file_path.unlink, True)
+            raise
         await self.session.refresh(media)
         return media
 
@@ -102,7 +106,6 @@ class MediaCRUD:
         if media is None:
             return None
 
-        matches = await asyncio.to_thread(
-            lambda: list(MEDIA_ROOT.glob(f'{media_id}*')),
-        )
-        return matches[0] if matches else None
+        file_path = MEDIA_ROOT / f'{media_id}.jpg'
+        exists = await asyncio.to_thread(file_path.is_file)
+        return file_path if exists else None

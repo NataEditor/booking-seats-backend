@@ -30,6 +30,21 @@ class CeleryInfrastructureTests(TestCase):
             'amqp://test%20user:p%40ss%2Fword@localhost:5672/%2F',
         )
 
+    def test_db_url_escapes_credentials(self) -> None:
+        """Спецсимволы в логине, пароле и имени БД кодируются в DSN."""
+        app_settings = Settings(
+            _env_file=None,
+            postgres_user='test user',
+            postgres_password='p@ss/word:1',
+            postgres_db='my db',
+            jwt_secret='01234567890123456789012345678901',
+        )
+
+        self.assertEqual(
+            app_settings.db_url,
+            'postgresql+asyncpg://test%20user:p%40ss%2Fword%3A1@localhost:5432/my%20db',
+        )
+
     def test_celery_uses_json_and_emits_monitoring_events(self) -> None:
         """Worker использует безопасный формат и отдаёт события Flower."""
         self.assertEqual(celery_app.conf.task_serializer, 'json')

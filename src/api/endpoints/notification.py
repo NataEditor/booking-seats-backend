@@ -9,7 +9,7 @@ from api.responses import error_responses
 from api.responses.statuses import ACCEPTED, NOTIFICATION_DETAIL, NOTIFICATION_RETRY
 from models import BookingNotification, NotificationStatus, NotificationType
 from schemas.notification import BookingNotificationInfo
-from tasks.notifications import send_booking_notification
+from tasks.notifications import enqueue_notification
 
 router = APIRouter()
 
@@ -90,5 +90,5 @@ async def retry_booking_notification(
         booking_id=booking_id,
         notification_id=notification_id,
     )
-    send_booking_notification.delay(str(notification.id))
+    enqueue_notification(notification.id)
     return notification

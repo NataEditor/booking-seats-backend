@@ -16,7 +16,7 @@ from crud.table import table_crud
 from exceptions.common import EntityNotFoundError
 from main import app
 from models.user import UserRole
-from schemas.table import TableCreate
+from schemas.table import TableCreate, TableUpdate
 
 from core.db import get_session
 from core.redis import get_redis_session
@@ -237,11 +237,11 @@ class TableAPITests(IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()['id'], str(table.id))
         create.assert_awaited_once()
-        cafe_id, request_schema, session = create.await_args.args
+        cafe_id, request_schema, session, redis = create.await_args.args
         self.assertEqual(cafe_id, self.cafe_id)
         self.assertEqual(request_schema.seat_number, 4)
         self.assertIs(session, self.session)
-
+        self.assertIs(redis, self.redis)
     async def test_manager_can_create_table_in_own_cafe(self) -> None:
         """Менеджер создаёт стол только в привязанном кафе."""
         self._set_user(_make_user(UserRole.MANAGER, cafe_id=self.cafe_id))
@@ -433,19 +433,20 @@ class TableCRUDTests(IsolatedAsyncioTestCase):
         """create_with_cafe привязывает новый стол к кафе из URL."""
         cafe_id = uuid.uuid4()
         session = AsyncMock(spec=AsyncSession)
+        session.flush = AsyncMock()
+        redis = AsyncMock()
         obj_in = TableCreate(seat_number=4, description='Стол у окна')
         created = _make_table(cafe_id=cafe_id, seat_number=4)
 
         with patch.object(table_crud, 'get', new=AsyncMock(return_value=created)):
-            result = await table_crud.create_with_cafe(cafe_id, obj_in, session)
+            result = await table_crud.create_with_cafe(cafe_id, obj_in, session, redis)
 
         self.assertIs(result, created)
         db_table = session.add.call_args.args[0]
         self.assertEqual(db_table.cafe_id, cafe_id)
         self.assertEqual(db_table.seat_number, 4)
-        session.commit.assert_awaited_once()
-        session.refresh.assert_awaited_once_with(db_table)
-
+        session.flush.assert_awaited_once()
+        redis.delete.assert_awaited_once()
     async def test_get_by_cafe_applies_activity_filter(self) -> None:
         """get_by_cafe добавляет фильтр активности только когда он задан."""
         cafe_id = uuid.uuid4()
@@ -481,6 +482,28 @@ class TableCRUDTests(IsolatedAsyncioTestCase):
         self.assertIn('tables.id', str(query))
         self.assertIn('tables.cafe_id', str(query))
 
+    async def test_update_keeps_description_when_not_passed(self) -> None:
+        """Обновление другого поля не затирает description."""
+        cafe_id = uuid.uuid4()
+        session = AsyncMock(spec=AsyncSession)
+        redis = AsyncMock()
+        table = _make_table(cafe_id=cafe_id, description='Стол у окна')
+
+        await table_crud.update(table, TableUpdate(seat_number=6), session, redis)
+
+        self.assertEqual(table.description, 'Стол у окна')
+        self.assertEqual(table.seat_number, 6)
+
+    async def test_update_clears_description_on_explicit_null(self) -> None:
+        """Явный null в description очищает описание."""
+        cafe_id = uuid.uuid4()
+        session = AsyncMock(spec=AsyncSession)
+        redis = AsyncMock()
+        table = _make_table(cafe_id=cafe_id, description='Стол у окна')
+
+        await table_crud.update(table, TableUpdate(description=None), session, redis)
+
+        self.assertIsNone(table.description)
 
 class TableDependencyTests(IsolatedAsyncioTestCase):
     """Проверяет зависимости кафе и вложенного стола."""

@@ -103,7 +103,26 @@ async def process_pending_due_notifications(limit: int = 100) -> None:
         await session.commit()
 
     for notification_id in notification_ids:
+        enqueue_notification(notification_id)
+
+
+def enqueue_notification(notification_id: str | uuid.UUID) -> bool:
+    """Ставит уведомление в очередь Celery, не прерывая запрос при сбое брокера.
+
+    Бронь уже закоммичена, поэтому падение брокера не должно превращаться
+    в 500: клиент решит, что бронь не создана, и повторит запрос.
+    Возвращает True, если задача поставлена в очередь.
+    """
+    try:
         send_booking_notification.delay(str(notification_id))
+    except Exception as error:
+        logger.error(
+            'Не удалось поставить уведомление {id} в очередь: {error}',
+            id=notification_id,
+            error=error,
+        )
+        return False
+    return True
 
 
 async def _dispatch_notification(

@@ -19,7 +19,7 @@ from crud.booking import booking_crud
 from models.booking import Booking
 from models.user import UserRole
 from schemas.booking import BookingCreate, BookingInfo, BookingUpdate
-from tasks.notifications import send_booking_notification
+from tasks.notifications import enqueue_notification
 
 from core.db import DBSession
 
@@ -102,7 +102,7 @@ async def create_booking(
         current_user,
         new_booking,
     )
-    send_booking_notification.delay(str(manager_notification_id))
+    enqueue_notification(manager_notification_id)
     return booking
 
 
@@ -133,5 +133,5 @@ async def update_booking(
         booking_id=booking_id,
         update_data=update_data,
     )
-    send_booking_notification.delay(str(manager_notification_id))
+    enqueue_notification(manager_notification_id)
     return booking
