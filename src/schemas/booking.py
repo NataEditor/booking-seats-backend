@@ -12,7 +12,7 @@ from schemas.table import TableShortInfo
 from schemas.user import UserShortInfo
 from schemas.validators import field_cannot_be_null
 
-from core.constants import BOOKING_NOTE_MAX_LENGTH
+from core.constants import BOOKING_NOTE_MAX_LENGTH, DEFAULT_BOOKING_REMINDER_MINUTES
 
 
 def check_booking_date_not_past(value: date) -> date:
@@ -67,7 +67,7 @@ class BookingCreate(BookingBase):
     tables_slots: List[BookingTableSlot]
     booking_date: BookinDateNotPast
     reminder_minutes_before: Optional[PositiveInt] = Field(
-        180,
+        DEFAULT_BOOKING_REMINDER_MINUTES,
         description=(
             'За сколько минут до первого слота отправить напоминание. '
             'Null отключает напоминание; если рассчитанное время уже прошло, '

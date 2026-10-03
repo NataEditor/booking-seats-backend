@@ -7,8 +7,12 @@ from schemas.base import BaseInfoScheme, DescriptionScheme, IdScheme
 from schemas.user import Phone, UserShortInfo
 from schemas.validators import field_cannot_be_null, validate_empty_field
 
-import core.constants as constants
-from core.constants import CAFE_ADDRESS_MAX_LENGTH, CAFE_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH
+from core.constants import (
+    CAFE_ADDRESS_MAX_LENGTH,
+    CAFE_NAME_MAX_LENGTH,
+    COMMON_MIN_LENGTH,
+    PHONE_NUMBER_MAX_LENGTH,
+)
 
 
 class BaseCafe(DescriptionScheme):
@@ -18,12 +22,11 @@ class BaseCafe(DescriptionScheme):
 
     name: str = Field(
         ...,
-        min_length=constants.MIN_STR_LNGH,
+        min_length=COMMON_MIN_LENGTH,
         max_length=CAFE_NAME_MAX_LENGTH,
         description='Название кафе',
     )
-    address: str = Field(
-        ...,
+    address: str = Field(        ...,
         max_length=CAFE_ADDRESS_MAX_LENGTH,
         description='Адрес кафе',
     )
@@ -57,12 +60,11 @@ class CafeUpdate(CafeCreate):
 
     name: Optional[str] = Field(
         None,
-        min_length=constants.MIN_STR_LNGH,
+        min_length=COMMON_MIN_LENGTH,
         max_length=CAFE_NAME_MAX_LENGTH,
         description='Название кафе',
     )
-    address: Optional[str] = Field(
-        None,
+    address: Optional[str] = Field(        None,
         max_length=CAFE_ADDRESS_MAX_LENGTH,
         description='Адрес кафе',
     )

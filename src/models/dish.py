@@ -6,7 +6,12 @@ from sqlalchemy import ForeignKey, Numeric, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base_model import Base
-from core.constants import COMMON_DESCRIPTION_MAX_LENGTH, DISH_NAME_MAX_LENGTH
+from core.constants import (
+    COMMON_DESCRIPTION_MAX_LENGTH,
+    DISH_NAME_MAX_LENGTH,
+    DISH_PRICE_DECIMAL_PLACES,
+    DISH_PRICE_MAX_DIGITS,
+)
 
 
 class CafeDish(Base):
@@ -44,7 +49,9 @@ class Dish(Base):
         ForeignKey('medias.id', name='fk_dish_photo'),
         nullable=True,
     )
-    price: Mapped[Decimal] = mapped_column(Numeric(precision=10, scale=2))
+    price: Mapped[Decimal] = mapped_column(
+        Numeric(precision=DISH_PRICE_MAX_DIGITS, scale=DISH_PRICE_DECIMAL_PLACES),
+    )
     cafes: Mapped[list['Cafe']] = relationship(  # noqa: F821
         'Cafe',
         secondary='cafe_dishes',

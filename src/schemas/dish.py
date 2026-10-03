@@ -40,6 +40,7 @@ class DishCreate(DishBase):
 
     check_not_empty_fields = field_validator('name', 'cafes_id')(validate_empty_field)
 
+
 class DishInfo(IdScheme, DishBase, BaseInfoScheme):
     """Схема полных данных о блюде."""
 

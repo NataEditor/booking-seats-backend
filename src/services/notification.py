@@ -14,9 +14,10 @@ from models import (
     StatusBooking,
 )
 
+from core.constants import DEFAULT_BOOKING_REMINDER_MINUTES
 from core.db import DBSession
 
-REMINDER_MINUTES_BEFORE = 180
+REMINDER_MINUTES_BEFORE = DEFAULT_BOOKING_REMINDER_MINUTES
 DEFAULT_BOOKING_TIME = time(12, 0, tzinfo=timezone.utc)
 
 

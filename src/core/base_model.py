@@ -44,6 +44,6 @@ class Base(PreBase):
 
 
 class DescriptionMixin:
-    """Миксин, добавляет поле discription."""
+    """Миксин, добавляет поле description."""
 
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

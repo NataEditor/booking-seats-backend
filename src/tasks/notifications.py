@@ -12,6 +12,7 @@ from tasks import celery_app
 from tasks.base import RetryableTask, async_task
 from tasks.channels.email import EmailChannel
 
+from core.constants import DEFAULT_NOTIFICATIONS_BATCH_SIZE
 from core.db import session_maker
 from core.settings import settings
 
@@ -90,7 +91,7 @@ async def send_booking_notification(self: RetryableTask, notification_id: str | 
 
 @celery_app.task(name='booking.notifications.process_pending_due_notifications')
 @async_task
-async def process_pending_due_notifications(limit: int = 100) -> None:
+async def process_pending_due_notifications(limit: int = DEFAULT_NOTIFICATIONS_BATCH_SIZE) -> None:
     """Безопасный Beat-диспетчер с атомарным захватом записей.
 
     Периодическая отправка напоминаний гостям через планировщик.

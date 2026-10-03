@@ -8,6 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from models import BookingNotification, NotificationStatus, NotificationType
 
+from core.constants import DEFAULT_NOTIFICATIONS_BATCH_SIZE, NOTIFICATION_STUCK_TIMEOUT_MINUTES
+
 
 class NotificationCRUD:
     """CRUD для уведомлений о бронировании.
@@ -94,8 +96,8 @@ class NotificationCRUD:
     async def get_due_notifications(
         self,
         session: AsyncSession,
-        limit: int = 100,
-        stuck_timeout_minutes: int = 10,
+        limit: int = DEFAULT_NOTIFICATIONS_BATCH_SIZE,
+        stuck_timeout_minutes: int = NOTIFICATION_STUCK_TIMEOUT_MINUTES,
     ) -> Sequence[uuid.UUID]:
         """Атомарно выбирает PENDING и зависшие PROCESSING уведомления.
 

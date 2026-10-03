@@ -7,7 +7,7 @@ from sqlalchemy import UUID, CheckConstraint, Date, Enum, ForeignKey, Index, Int
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.base_model import Base
-from core.constants import BOOKING_NOTE_MAX_LENGTH
+from core.constants import BOOKING_NOTE_MAX_LENGTH, DEFAULT_BOOKING_REMINDER_MINUTES
 
 
 class StatusBooking(StrEnum):
@@ -83,11 +83,10 @@ ForeignKey('users.id', name='fk_booking_user_id_user'),
     reminder_minutes_before: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
-        default=180,
-        server_default='180',
+        default=DEFAULT_BOOKING_REMINDER_MINUTES,
+        server_default=str(DEFAULT_BOOKING_REMINDER_MINUTES),
     )
-    tables_slots: Mapped[List['BookingTablesSlots']] = relationship(
-        'BookingTablesSlots',
+    tables_slots: Mapped[List['BookingTablesSlots']] = relationship(        'BookingTablesSlots',
         back_populates='booking',
         lazy='selectin',
     )
