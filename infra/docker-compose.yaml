@@ -10,10 +10,9 @@ services:
     volumes:
       # Bind-mount исходников и медиа для hot-reload в dev-режиме
       - ../src:/app
+      - /app/.venv
+      - ../entrypoint.sh:/app/entrypoint.sh
       - media_data:/app/media
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
     depends_on:
       db:
         condition: service_healthy
@@ -33,6 +32,10 @@ services:
     build: ../
     env_file:
       - ./.env
+    volumes:
+      - ../src:/app
+      - /app/.venv
+      - media_data:/app/media
     entrypoint:
       - celery
       - -A
@@ -50,6 +53,9 @@ services:
     build: ../
     env_file:
       - ./.env
+    volumes:
+      - ../src:/app
+      - /app/.venv
     entrypoint:
       - celery
       - -A

@@ -17,3 +17,5 @@ logs/
 # Локально собраные файлы
 docs/index.html
 media/
+celerybeat-schedule*
+*.schedule
