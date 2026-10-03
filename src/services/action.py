@@ -9,6 +9,7 @@ from models.action import Action
 from models.user import User
 from schemas.action import ActionCreate, ActionUpdate
 from services.cafe import ensure_cafes_exist, ensure_manager_cafes_access
+from services.media import MediaService
 
 from core.redis import redis_dep
 
@@ -40,6 +41,8 @@ class ActionService:
         """Проверяет права и связи, затем создаёт акцию."""
         ensure_manager_cafes_access(current_user, action_create.cafes_id)
         await ensure_cafes_exist(action_create.cafes_id, session)
+        if action_create.photo_id is not None:
+            await MediaService.get_media_or_raise(action_create.photo_id, session, check_file=False)
         return await action_crud.create(action_create, session, redis)
 
     @staticmethod
@@ -56,4 +59,6 @@ class ActionService:
         new_cafe_ids = action_update.cafes_id if action_update.cafes_id is not None else current_cafe_ids
         ensure_manager_cafes_access(current_user, new_cafe_ids)
         await ensure_cafes_exist(new_cafe_ids, session)
+        if 'photo_id' in action_update.model_fields_set and action_update.photo_id is not None:
+            await MediaService.get_media_or_raise(action_update.photo_id, session, check_file=False)
         return await action_crud.update(action, action_update, session, redis)

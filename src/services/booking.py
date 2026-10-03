@@ -2,14 +2,14 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional, Protocol
 
-from fastapi import HTTPException, status
+from fastapi import status
 from loguru import logger
 from sqlalchemy import and_, or_, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from api.dependencies.cafe import get_cafe_or_404
-from api.dependencies.permissions import CurrentUser
+from api.dependencies.permissions import CurrentUser, ensure_active_resource_visible
 from crud.booking import BookingCRUD, booking_crud
 from exceptions.base import APIError
 from exceptions.booking import (
@@ -18,6 +18,7 @@ from exceptions.booking import (
     CrossSlotsExistsError,
     TableAlreadyBookedError,
 )
+from exceptions.common import EntityNotFoundError
 from models.booking import Booking, BookingTablesSlots, StatusBooking
 from models.slots import Slot
 from models.table import Table
@@ -224,10 +225,7 @@ class BookingService:
         unknown_table_ids = set(table_ids) - found_table_ids
         if unknown_table_ids:
             logger.warning('В кафе не найдены столы(по id){}', unknown_table_ids)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'В кафе не найдены столы(по id) {unknown_table_ids}',
-            )
+            raise EntityNotFoundError(f'В кафе не найдены столы (по ID): {unknown_table_ids}')
 
         found_slot_ids = await self.session.execute(
             select(Slot.id).where(
@@ -240,10 +238,7 @@ class BookingService:
         unknown_slot_ids = set(slot_ids) - found_slot_ids
         if unknown_slot_ids:
             logger.warning('В кафе не найдены слоты(по id){}', unknown_slot_ids)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f'В кафе не найдены слот с id {unknown_slot_ids}',
-            )
+            raise EntityNotFoundError(f'В кафе не найдены слоты (по ID): {unknown_slot_ids}')
 
     async def check_number_geusts_not_more_seat_number(
         self,
@@ -321,7 +316,8 @@ class BookingService:
     ) -> tuple[Booking, uuid.UUID]:
         """Создает бронирование с напоминанием гостю и уведомлением менеджеров."""
         table_slot_ids, table_ids, slot_ids = self.split_tables_slots(new_booking.tables_slots)
-        await get_cafe_or_404(cafe_id=new_booking.cafe_id, session=self.session)
+        cafe = await get_cafe_or_404(cafe_id=new_booking.cafe_id, session=self.session)
+        ensure_active_resource_visible(current_user, cafe, 'Кафе не найдено')
         await self.check_cafe_has_tables_slots(
             cafe_id=new_booking.cafe_id,
             table_ids=table_ids,

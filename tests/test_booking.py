@@ -5,14 +5,17 @@ from types import SimpleNamespace
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies.booking import get_booking_service
 from api.dependencies.logging import get_current_user_with_logging
+from crud.booking import booking_crud
 from exceptions.base import APIError
 from exceptions.booking import TableAlreadyBookedError
+from exceptions.common import EntityNotFoundError
 from main import app
 from models.booking import StatusBooking
 from models.user import UserRole
@@ -690,6 +693,37 @@ class BookingRulesTests(IsolatedAsyncioTestCase):
             )
 
         self.service.session.rollback.assert_awaited_once_with()
+
+    async def test_canceling_booking_deactivates_tables_slots(self) -> None:
+        """При отмене бронирования связанные tables_slots деактивируются."""
+        session = AsyncMock(spec=AsyncSession)
+        booking = _make_booking()
+        slot_relation = SimpleNamespace(table_id=uuid.uuid4(), slot_id=uuid.uuid4(), is_active=True)
+        booking.tables_slots = [slot_relation]
+
+        with patch.object(booking_crud, 'get', new=AsyncMock(return_value=booking)):
+            await booking_crud.update(
+                db_booking=booking,
+                obj_in=BookingUpdate(status=StatusBooking.CANCELED),
+                session=session,
+            )
+
+        self.assertFalse(slot_relation.is_active)
+        session.flush.assert_awaited_once()
+
+    async def test_create_booking_in_inactive_cafe_raises_not_found(self) -> None:
+        """Обычный пользователь не может забронировать стол в неактивном кафе."""
+        user = _make_user(UserRole.USER)
+        booking = _make_booking(user_id=user.id)
+        new_booking = BookingCreate.model_validate(_booking_payload(booking))
+        inactive_cafe = SimpleNamespace(id=new_booking.cafe_id, is_active=False)
+
+        with patch('services.booking.get_cafe_or_404', new=AsyncMock(return_value=inactive_cafe)):
+            with self.assertRaises(HTTPException) as error:
+                await self.service.create_booking_with_notifications(user, new_booking)
+
+        self.assertEqual(error.exception.status_code, 404)
+        self.assertEqual(error.exception.detail, 'Кафе не найдено')
     async def test_manager_can_access_booking_of_assigned_cafe(self) -> None:
         """Менеджеру доступна бронь другого пользователя в своём кафе."""
         cafe_id = uuid.uuid4()

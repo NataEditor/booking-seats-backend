@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import interfaces, selectinload
 
 from crud.base import CRUDBase
-from models.booking import Booking, BookingTablesSlots
+from models.booking import Booking, BookingTablesSlots, StatusBooking
 from models.user import User, UserRole
 from schemas.booking import BookingCreate, BookingInfo, BookingUpdate
 
@@ -139,19 +139,21 @@ class BookingCRUD(CRUDBase[Booking, BookingCreate, BookingUpdate]):
         logger.info('Обновление бронирования id {}.', db_booking.id)
         update_data = obj_in.model_dump(exclude_unset=True)
 
-        if 'tables_slots' in update_data:
+        is_canceling = (
+            update_data.get('is_active') is False
+            or update_data.get('status') == StatusBooking.CANCELED
+        )
+        if 'tables_slots' in update_data or is_canceling:
             for item in db_booking.tables_slots:
                 item.is_active = False
-        if 'tables_slots' in update_data and not (
-            'is_active' in update_data and not update_data['is_active']
-        ):
+
+        if 'tables_slots' in update_data and not is_canceling:
             update_data['tables_slots'] = create_obj_booking_tables_slots(
                 update_data,
                 booking_id=db_booking.id,
             )
             db_booking.tables_slots.extend(update_data['tables_slots'])
             del update_data['tables_slots']
-
         for field, value in update_data.items():
             if hasattr(db_booking, field):
                 setattr(db_booking, field, value)
